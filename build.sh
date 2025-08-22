@@ -530,10 +530,63 @@ update_package_list_for_variant() {
     cp "$packages_file.backup" "$packages_file"
     
     # Replace linux-t2 with the variant-specific kernel
+    log_info "Replacing linux-t2 with $kernel_package in packages.x86_64"
+    
+    # Show before replacement
+    log_info "Before replacement:"
+    grep -n "linux-t2" "$packages_file" || log_info "  No linux-t2 entries found"
+    
     sed -i "s/^linux-t2$/$kernel_package/" "$packages_file"
     
+    # Show after replacement
+    log_info "After replacement:"
+    grep -n "linux-t2\|$kernel_package" "$packages_file" || log_info "  No matching entries found"
+    
     log_info "Updated packages.x86_64 to use $kernel_package for $variant ISO"
+    
+    # Update other configuration files that reference the kernel
+    update_kernel_references_for_variant "$variant" "$kernel_package"
 }
+
+# Update kernel references in configuration files for specific variant
+update_kernel_references_for_variant() {
+    local variant="$1"
+    local kernel_package="$2"
+    local grub_cfg="$ARCHISO_DIR/grub/grub.cfg"
+    local mkinitcpio_preset="$ARCHISO_DIR/airootfs/etc/mkinitcpio.d/linux-t2.preset"
+    
+    log_info "Updating kernel references in configuration files for $kernel_package"
+    
+    # Backup grub.cfg if it doesn't exist
+    if [[ ! -f "$grub_cfg.backup" ]]; then
+        cp "$grub_cfg" "$grub_cfg.backup"
+    fi
+    
+    # Backup mkinitcpio preset if it doesn't exist
+    if [[ ! -f "$mkinitcpio_preset.backup" ]]; then
+        cp "$mkinitcpio_preset" "$mkinitcpio_preset.backup"
+    fi
+    
+    # Restore from backup and update for this variant
+    cp "$grub_cfg.backup" "$grub_cfg"
+    cp "$mkinitcpio_preset.backup" "$mkinitcpio_preset"
+    
+    # Update grub.cfg to use the correct kernel
+    sed -i "s/vmlinuz-linux-t2/vmlinuz-$kernel_package/g" "$grub_cfg"
+    sed -i "s/initramfs-linux-t2/initramfs-$kernel_package/g" "$grub_cfg"
+    
+    # Update mkinitcpio preset
+    sed -i "s/vmlinuz-linux-t2/vmlinuz-$kernel_package/g" "$mkinitcpio_preset"
+    sed -i "s/initramfs-linux-t2/initramfs-$kernel_package/g" "$mkinitcpio_preset"
+    
+    # Rename the preset file itself to match the kernel
+    local new_preset="$ARCHISO_DIR/airootfs/etc/mkinitcpio.d/$kernel_package.preset"
+    if [[ "$kernel_package" != "linux-t2" ]]; then
+        mv "$mkinitcpio_preset" "$new_preset"
+        log_info "Renamed mkinitcpio preset to $(basename "$new_preset")"
+    fi
+    
+    log_info "Updated configuration files for $kernel_package"
 
 # Show usage
 show_usage() {
