@@ -85,6 +85,7 @@ install_dependencies() {
         "jq"                # JSON processor
         "rsync"             # File synchronization
         "squashfs-tools"    # Filesystem tools
+        "python-yaml"       # Required for kernel documentation build
     )
     
     local missing_packages=()
