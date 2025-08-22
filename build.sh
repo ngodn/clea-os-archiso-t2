@@ -407,36 +407,23 @@ SigLevel = Optional TrustAll"
     } > "$temp_file"
     mv "$temp_file" "$pacman_conf"
     
-    # For non-default kernels, add special configuration to handle conflicts
-    if [[ "$LOCAL_REPO_DIR" == *"xanmod"* ]] || grep -q "linux-t2-xanmod" "$LOCAL_REPO_DIR"/*.pkg.tar.zst 2>/dev/null; then
-        log_info "Adding special configuration for XanMod kernel conflicts..."
-        
-        # Add ignore packages to prevent conflicts
-        if ! grep -q "IgnorePkg" "$pacman_conf"; then
-            # Add IgnorePkg line after [options] section
-            sed -i '/^\[options\]/a IgnorePkg = linux-t2' "$pacman_conf"
-        else
-            # Append to existing IgnorePkg line
-            sed -i 's/^IgnorePkg\s*=.*/& linux-t2/' "$pacman_conf"
-        fi
-        
-        # Also add assume-installed for dependency resolution
-        if ! grep -q "AssumeInstalled" "$pacman_conf"; then
-            sed -i '/^IgnorePkg/a AssumeInstalled = linux-t2' "$pacman_conf"
-        fi
-        
-        log_info "Added conflict resolution configuration for XanMod kernel"
-        
-        # Instead of disabling arch-mact2, add more specific ignore packages
-        log_info "Adding specific kernel packages to ignore list to prevent conflicts"
-        sed -i 's/^IgnorePkg = linux-t2/IgnorePkg = linux-t2 linux-t2-lts linux-t2-xanmod linux-t2-xanmod-lts linux-t2-liquorix/' "$pacman_conf"
+    # Verify arch-mact2 repository is still accessible
+    log_info "Verifying arch-mact2 repository accessibility..."
+    if grep -q "\[arch-mact2\]" "$pacman_conf" && grep -q "mirror.funami.tech" "$pacman_conf"; then
+        log_info "arch-mact2 repository is properly configured"
+    else
+        log_error "arch-mact2 repository configuration is missing or corrupted"
+        return 1
     fi
     
     log_success "Added local T2 repository to pacman.conf (highest priority)"
     
     # Verify the repository configuration
     log_info "Repository configuration in pacman.conf:"
-    head -n 10 "$pacman_conf" | grep -A3 "\[clea-t2-local\]" || log_warning "Could not verify repository configuration"
+    head -n 15 "$pacman_conf" || log_warning "Could not read pacman.conf"
+    
+    log_info "All repositories in pacman.conf:"
+    grep "^\[.*\]" "$pacman_conf" || log_warning "No repositories found"
     
     # Test repository access
     log_info "Testing repository database access..."
