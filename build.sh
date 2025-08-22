@@ -273,6 +273,20 @@ setup_local_repository() {
         done < <(find "$KERNEL_BUILD_DIR" -name "*.pkg.tar.zst" -print0 2>/dev/null)
     fi
     
+    # Also check current script directory for packages (fallback)
+    if [[ ${#built_packages[@]} -eq 0 ]]; then
+        while IFS= read -r -d '' package; do
+            built_packages+=("$package")
+        done < <(find "$SCRIPT_DIR" -maxdepth 1 -name "*.pkg.tar.zst" -print0 2>/dev/null)
+    fi
+    
+    # Also check for packages in nested linux-t2-clea directory (common case)
+    if [[ ${#built_packages[@]} -eq 0 ]]; then
+        while IFS= read -r -d '' package; do
+            built_packages+=("$package")
+        done < <(find "$SCRIPT_DIR/linux-t2-clea" -maxdepth 1 -name "*.pkg.tar.zst" -print0 2>/dev/null)
+    fi
+    
     if [[ ${#built_packages[@]} -eq 0 ]]; then
         log_warning "No built T2 packages found in $KERNEL_BUILD_DIR"
         log_info "Make sure kernel build completed successfully"
