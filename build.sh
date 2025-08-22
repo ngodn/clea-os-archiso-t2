@@ -386,6 +386,20 @@ update_archiso_pacman_config() {
     rm -rf "$archiso_local_repo"
     cp -r "$LOCAL_REPO_DIR" "$archiso_local_repo"
     
+    # Fix database file naming for pacman compatibility
+    cd "$archiso_local_repo"
+    if [[ -f "clea-t2-local.db.tar.gz" ]]; then
+        log_info "Creating database symlinks for pacman compatibility..."
+        ln -sf "clea-t2-local.db.tar.gz" "clea-t2-local.db"
+        ln -sf "clea-t2-local.files.tar.gz" "clea-t2-local.files" 2>/dev/null || true
+        log_info "Database files prepared:"
+        ls -la clea-t2-local.db* || true
+    else
+        log_error "Database file clea-t2-local.db.tar.gz not found in local repository"
+        return 1
+    fi
+    cd - >/dev/null
+    
     # Configure repository entry - use path accessible from within chroot
     local local_repo_entry="[clea-t2-local]
 Server = file:///local-repo
