@@ -407,6 +407,16 @@ SigLevel = Optional TrustAll"
     } > "$temp_file"
     mv "$temp_file" "$pacman_conf"
     
+    # Add ignore packages to prevent conflicts
+    log_info "Adding package ignore list to prevent conflicts..."
+    if ! grep -q "IgnorePkg" "$pacman_conf"; then
+        # Add IgnorePkg line after [options] section
+        sed -i '/^\[options\]/a IgnorePkg = linux-t2' "$pacman_conf"
+    else
+        # Append to existing IgnorePkg line
+        sed -i 's/^IgnorePkg\s*=.*/& linux-t2/' "$pacman_conf"
+    fi
+    
     log_success "Added local T2 repository to pacman.conf (highest priority)"
     
     # Verify the repository configuration
@@ -483,16 +493,31 @@ build_single_iso() {
     # Build the ISO
     local iso_build_log="$LOG_DIR/build-$variant.log"
     
+    # Debug: Show final package list and repository configuration
+    log_info "Final package list for $variant:"
+    grep -n "$kernel_package\|linux-t2" "$ARCHISO_DIR/packages.x86_64" || log_info "  No kernel packages found"
+    
+    log_info "Repository configuration:"
+    head -n 15 "$ARCHISO_DIR/pacman.conf" | grep -A5 "\[clea-t2-local\]" || log_warning "Local repository not found in config"
+    
     log_info "Running mkarchiso for $variant..."
     
     if [[ "$VERBOSE" == "true" ]]; then
         if ! sudo mkarchiso -v -w "$work_dir" -o "$variant_output_dir" "$ARCHISO_DIR" 2>&1 | tee "$iso_build_log"; then
             log_error "ISO build failed for $variant. Check log: $iso_build_log"
+            log_info "Checking for specific conflict information in log..."
+            if [[ -f "$iso_build_log" ]]; then
+                grep -A5 -B5 "conflict\|error:" "$iso_build_log" | tail -20
+            fi
             return 1
         fi
     else
         if ! sudo mkarchiso -w "$work_dir" -o "$variant_output_dir" "$ARCHISO_DIR" >"$iso_build_log" 2>&1; then
             log_error "ISO build failed for $variant. Check log: $iso_build_log"
+            log_info "Checking for specific conflict information in log..."
+            if [[ -f "$iso_build_log" ]]; then
+                grep -A5 -B5 "conflict\|error:" "$iso_build_log" | tail -20
+            fi
             return 1
         fi
     fi
@@ -537,6 +562,18 @@ update_package_list_for_variant() {
     grep -n "linux-t2" "$packages_file" || log_info "  No linux-t2 entries found"
     
     sed -i "s/^linux-t2$/$kernel_package/" "$packages_file"
+    
+    # For non-default kernels, also remove any conflicting packages
+    if [[ "$kernel_package" != "linux-t2" ]]; then
+        log_info "Removing packages that conflict with $kernel_package"
+        
+        # Remove packages that might conflict (based on PKGBUILD conflicts)
+        sed -i '/^apple-gmux-t2-dkms-git$/d' "$packages_file" 2>/dev/null || true
+        
+        # Also explicitly remove any remaining linux-t2 references
+        sed -i '/^linux-t2$/d' "$packages_file" 2>/dev/null || true
+        sed -i '/^linux-t2-lts$/d' "$packages_file" 2>/dev/null || true
+    fi
     
     # Show after replacement
     log_info "After replacement:"
