@@ -344,7 +344,7 @@ setup_local_repository() {
         log_info "  - $(basename "$pkg")"
     done
     
-    if ! repo-add clea-t2.db.tar.gz *.pkg.tar.zst; then
+    if ! repo-add clea-t2-local.db.tar.gz *.pkg.tar.zst; then
         log_error "Failed to create repository database"
         log_info "Repository directory contents:"
         ls -la "$LOCAL_REPO_DIR"
