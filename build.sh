@@ -380,9 +380,15 @@ update_archiso_pacman_config() {
     
     log_info "Found ${#repo_packages[@]} packages in local repository"
     
-    # Configure repository entry - mkarchiso can access host filesystem paths
+    # Copy local repository into archiso directory for chroot access
+    local archiso_local_repo="$ARCHISO_DIR/local-repo"
+    log_info "Copying local repository into archiso directory for chroot access..."
+    rm -rf "$archiso_local_repo"
+    cp -r "$LOCAL_REPO_DIR" "$archiso_local_repo"
+    
+    # Configure repository entry - use path accessible from within chroot
     local local_repo_entry="[clea-t2-local]
-Server = file://$LOCAL_REPO_DIR
+Server = file:///local-repo
 SigLevel = Optional TrustAll"
     
     # Backup original pacman.conf if it doesn't exist
