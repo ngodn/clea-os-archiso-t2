@@ -399,12 +399,34 @@ SigLevel = Optional TrustAll"
     
     # Add local repository entry at the beginning (highest priority)
     # This ensures our custom kernel takes precedence over any conflicting packages
+    log_info "Adding local repository to the beginning of pacman.conf..."
+    
+    # First, verify arch-mact2 exists in the original config
+    if ! grep -q "\[arch-mact2\]" "$pacman_conf"; then
+        log_error "arch-mact2 repository not found in original pacman.conf"
+        return 1
+    fi
+    
+    # Create temporary file and carefully insert local repo before the first repository
     local temp_file=$(mktemp)
-    {
-        echo "$local_repo_entry"
-        echo ""
-        cat "$pacman_conf"
-    } > "$temp_file"
+    local added_local_repo=false
+    
+    while IFS= read -r line; do
+        # If we hit the first repository section and haven't added local repo yet
+        if [[ "$line" =~ ^\[.*\]$ ]] && [[ "$added_local_repo" == false ]]; then
+            echo "$local_repo_entry"
+            echo ""
+            added_local_repo=true
+        fi
+        echo "$line"
+    done < "$pacman_conf" > "$temp_file"
+    
+    # If we never found a repository section, add at the end
+    if [[ "$added_local_repo" == false ]]; then
+        echo "" >> "$temp_file"
+        echo "$local_repo_entry" >> "$temp_file"
+    fi
+    
     mv "$temp_file" "$pacman_conf"
     
     # Verify arch-mact2 repository is still accessible
