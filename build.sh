@@ -209,6 +209,180 @@ build_kernels() {
     return 0
 }
 
+# Setup local repository with built T2 packages
+setup_local_repository() {
+    log_info "Setting up local repository with built T2 packages..."
+    
+    # Create local repository structure
+    mkdir -p "$LOCAL_REPO_DIR"
+    
+    # Find all built packages in kernel build directory
+    local built_packages=()
+    if [[ -d "$KERNEL_BUILD_DIR" ]]; then
+        # Look for built packages (*.pkg.tar.zst files)
+        while IFS= read -r -d '' package; do
+            built_packages+=("$package")
+        done < <(find "$KERNEL_BUILD_DIR" -name "*.pkg.tar.zst" -print0 2>/dev/null)
+    fi
+    
+    if [[ ${#built_packages[@]} -eq 0 ]]; then
+        log_warning "No built T2 packages found in $KERNEL_BUILD_DIR"
+        log_info "Make sure kernel build completed successfully"
+        return 1
+    fi
+    
+    log_info "Found ${#built_packages[@]} built T2 packages"
+    
+    # Copy packages to local repository
+    for package in "${built_packages[@]}"; do
+        local package_name=$(basename "$package")
+        log_info "Adding package: $package_name"
+        cp "$package" "$LOCAL_REPO_DIR/"
+    done
+    
+    # Create repository database
+    cd "$LOCAL_REPO_DIR"
+    
+    if ! repo-add clea-t2.db.tar.gz *.pkg.tar.zst; then
+        log_error "Failed to create repository database"
+        return 1
+    fi
+    
+    log_success "Local T2 repository created at $LOCAL_REPO_DIR"
+    
+    # Update archiso pacman.conf to include local repository
+    update_archiso_pacman_config
+    
+    return 0
+}
+
+# Update archiso pacman.conf to include local repository
+update_archiso_pacman_config() {
+    local pacman_conf="$ARCHISO_DIR/pacman.conf"
+    local local_repo_entry="[clea-t2-local]
+Server = file://$LOCAL_REPO_DIR
+SigLevel = Optional TrustAll"
+    
+    # Check if local repository entry already exists
+    if grep -q "\[clea-t2-local\]" "$pacman_conf"; then
+        log_info "Local repository already configured in pacman.conf"
+        return 0
+    fi
+    
+    # Add local repository entry before arch-mact2
+    if grep -q "\[arch-mact2\]" "$pacman_conf"; then
+        # Insert before arch-mact2
+        sed -i "/\[arch-mact2\]/i\\$local_repo_entry\\n" "$pacman_conf"
+        log_success "Added local T2 repository to pacman.conf"
+    else
+        # Add at the end
+        echo -e "\n$local_repo_entry" >> "$pacman_conf"
+        log_success "Added local T2 repository to pacman.conf"
+    fi
+}
+
+# Build ISO variants
+build_isos() {
+    local variant="$1"
+    
+    log_info "Building ISO variant(s): $variant"
+    
+    if [[ "$variant" == "all" ]]; then
+        # Build all variants
+        for v in "${BUILD_VARIANTS[@]}"; do
+            if ! build_single_iso "$v"; then
+                log_error "Failed to build $v ISO"
+                return 1
+            fi
+        done
+    else
+        # Build single variant
+        if ! build_single_iso "$variant"; then
+            log_error "Failed to build $variant ISO"
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# Build a single ISO variant
+build_single_iso() {
+    local variant="$1"
+    local kernel_package=$(get_kernel_config "$variant")
+    
+    log_info "Building $variant ISO with $kernel_package kernel..."
+    
+    # Create variant-specific output directory
+    local variant_output_dir="$OUTPUT_DIR/$variant"
+    mkdir -p "$variant_output_dir"
+    
+    # Create temporary work directory
+    local work_dir="$SCRIPT_DIR/archiso-$variant"
+    
+    # Clean previous work directory
+    if [[ -d "$work_dir" ]]; then
+        sudo rm -rf "$work_dir"
+    fi
+    
+    # Update packages.x86_64 for this variant
+    update_package_list_for_variant "$variant" "$kernel_package"
+    
+    # Build the ISO
+    local iso_build_log="$LOG_DIR/build-$variant.log"
+    
+    log_info "Running mkarchiso for $variant..."
+    
+    if [[ "$VERBOSE" == "true" ]]; then
+        if ! sudo mkarchiso -v -w "$work_dir" -o "$variant_output_dir" "$ARCHISO_DIR" 2>&1 | tee "$iso_build_log"; then
+            log_error "ISO build failed for $variant. Check log: $iso_build_log"
+            return 1
+        fi
+    else
+        if ! sudo mkarchiso -w "$work_dir" -o "$variant_output_dir" "$ARCHISO_DIR" >"$iso_build_log" 2>&1; then
+            log_error "ISO build failed for $variant. Check log: $iso_build_log"
+            return 1
+        fi
+    fi
+    
+    # Clean up work directory
+    sudo rm -rf "$work_dir"
+    
+    log_success "Successfully built $variant ISO"
+    
+    # List built ISO files
+    local iso_files=($(find "$variant_output_dir" -name "*.iso" -type f))
+    if [[ ${#iso_files[@]} -gt 0 ]]; then
+        log_info "Built ISO files:"
+        for iso_file in "${iso_files[@]}"; do
+            local iso_size=$(du -h "$iso_file" | cut -f1)
+            log_info "  - $(basename "$iso_file") ($iso_size)"
+        done
+    fi
+    
+    return 0
+}
+
+# Update package list for specific variant
+update_package_list_for_variant() {
+    local variant="$1"
+    local kernel_package="$2"
+    local packages_file="$ARCHISO_DIR/packages.x86_64"
+    
+    # Create backup if it doesn't exist
+    if [[ ! -f "$packages_file.backup" ]]; then
+        cp "$packages_file" "$packages_file.backup"
+    fi
+    
+    # Restore from backup and update for this variant
+    cp "$packages_file.backup" "$packages_file"
+    
+    # Replace linux-t2 with the variant-specific kernel
+    sed -i "s/^linux-t2$/$kernel_package/" "$packages_file"
+    
+    log_info "Updated packages.x86_64 to use $kernel_package for $variant ISO"
+}
+
 # Show usage
 show_usage() {
     echo "Unified T2 Arch ISO Build System"
@@ -316,13 +490,17 @@ main() {
         exit 1
     fi
     
-    # For now, just show success message
-    # TODO: Add ISO building functionality
+    # Step 3: Build ISO variants
+    if ! build_isos "$build_variant"; then
+        log_error "ISO building failed"
+        exit 1
+    fi
+    
     local end_time=$(date +%s)
     local total_time=$((end_time - start_time))
     
-    log_success "Kernel build completed in ${total_time}s"
-    log_info "ISO building functionality will be added next"
+    log_success "Build completed successfully in ${total_time}s"
+    log_info "Built ISO(s) are available in: $OUTPUT_DIR"
     
     exit 0
 }
