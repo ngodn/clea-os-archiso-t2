@@ -587,6 +587,7 @@ update_kernel_references_for_variant() {
     fi
     
     log_info "Updated configuration files for $kernel_package"
+}
 
 # Show usage
 show_usage() {
