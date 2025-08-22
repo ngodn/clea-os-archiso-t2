@@ -1,0 +1,333 @@
+#!/usr/bin/python3
+
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Original: Copyleft 2022-2024 Noa Himesaka
+# Enhanced multi-kernel support: 2024 ngodn (eins0fx)
+
+import argparse
+import sys
+import subprocess
+import requests
+import json
+import os
+from typing import Dict, List, Optional
+
+class Colors:
+    """ANSI color codes for terminal output"""
+    BLUE = '\033[0;34m'
+    GREEN = '\033[0;32m'
+    YELLOW = '\033[1;33m'
+    RED = '\033[0;31m'
+    NC = '\033[0m'  # No Color
+    BOLD = '\033[1m'
+
+class T2Strap:
+    def __init__(self):
+        # Enhanced kernel variants support
+        self.kernel_variants = {
+            "linux-t2": {
+                "name": "Mainline T2 Kernel",
+                "description": "Latest stable kernel with T2 support",
+                "use_case": "General purpose, bleeding edge features",
+                "stability": "Good",
+                "performance": "Balanced"
+            },
+            "linux-t2-lts": {
+                "name": "LTS T2 Kernel", 
+                "description": "Long-term support kernel with T2 support",
+                "use_case": "Production servers, maximum stability",
+                "stability": "Excellent",
+                "performance": "Stable"
+            },
+            "linux-t2-xanmod": {
+                "name": "XanMod T2 Kernel",
+                "description": "Performance-optimized kernel for desktop/gaming",
+                "use_case": "Gaming, desktop performance",
+                "stability": "Good",
+                "performance": "High"
+            },
+            "linux-t2-xanmod-lts": {
+                "name": "XanMod LTS T2 Kernel",
+                "description": "Balanced performance and stability",
+                "use_case": "Desktop users wanting stability + performance",
+                "stability": "Very Good",
+                "performance": "High"
+            },
+            "linux-t2-liquorix": {
+                "name": "Liquorix T2 Kernel",
+                "description": "Desktop/multimedia optimized kernel",
+                "use_case": "Multimedia, content creation, gaming",
+                "stability": "Good", 
+                "performance": "Very High"
+            }
+        }
+        
+        # Configuration URLs with fallback
+        self.kernel_list_url = "https://mirror.funami.tech/kernel_list.json"
+        self.denylist_url = "https://mirror.funami.tech/denylist.json"
+        self.asklist_url = "https://mirror.funami.tech/asklist.json"
+        
+        # Initialize data
+        self.kernel_list = {}
+        self.kernel_allowlist = []
+        self.denylist = []
+        self.asklist = []
+        
+    def log_info(self, message: str):
+        """Print info message with color"""
+        print(f"{Colors.BLUE}[INFO]{Colors.NC} {message}")
+        
+    def log_success(self, message: str):
+        """Print success message with color"""
+        print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {message}")
+        
+    def log_warning(self, message: str):
+        """Print warning message with color"""
+        print(f"{Colors.YELLOW}[WARNING]{Colors.NC} {message}")
+        
+    def log_error(self, message: str):
+        """Print error message with color"""
+        print(f"{Colors.RED}[ERROR]{Colors.NC} {message}")
+        
+    def fetch_configuration(self) -> bool:
+        """Fetch configuration from remote URLs with error handling"""
+        try:
+            self.log_info("Fetching kernel configuration...")
+            
+            # Fetch kernel list
+            response = requests.get(self.kernel_list_url, timeout=10)
+            response.raise_for_status()
+            self.kernel_list = response.json()
+            self.kernel_allowlist = self.kernel_list.get("accepted_args", [])
+            
+            # Fetch denylist
+            response = requests.get(self.denylist_url, timeout=10)
+            response.raise_for_status()
+            self.denylist = response.json()
+            
+            # Fetch asklist
+            response = requests.get(self.asklist_url, timeout=10)
+            response.raise_for_status()
+            self.asklist = response.json()
+            
+            self.log_success("Configuration fetched successfully")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            self.log_error(f"Failed to fetch configuration: {e}")
+            self.log_warning("Falling back to default configuration")
+            self._use_default_config()
+            return False
+            
+    def _use_default_config(self):
+        """Use default configuration when remote fetch fails"""
+        self.kernel_allowlist = list(self.kernel_variants.keys()) + ["default"]
+        self.kernel_list = {
+            "default": "linux-t2",
+            **{k: k for k in self.kernel_variants.keys()}
+        }
+        self.denylist = ["linux", "linux-lts", "linux-zen", "linux-hardened"]
+        self.asklist = ["virtualbox-guest-utils"]
+        
+    def display_kernel_menu(self) -> str:
+        """Display interactive kernel selection menu"""
+        print(f"\n{Colors.BOLD}Available T2 Kernel Variants:{Colors.NC}")
+        print("=" * 60)
+        
+        variants = list(self.kernel_variants.keys())
+        for i, kernel in enumerate(variants, 1):
+            info = self.kernel_variants[kernel]
+            print(f"{Colors.GREEN}{i}.{Colors.NC} {Colors.BOLD}{info['name']}{Colors.NC}")
+            print(f"   Description: {info['description']}")
+            print(f"   Use Case: {info['use_case']}")
+            print(f"   Stability: {info['stability']} | Performance: {info['performance']}")
+            print()
+            
+        while True:
+            try:
+                choice = input(f"Select kernel variant (1-{len(variants)}) [1]: ").strip()
+                if not choice:
+                    choice = "1"
+                    
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(variants):
+                    selected = variants[choice_num - 1]
+                    self.log_success(f"Selected: {self.kernel_variants[selected]['name']}")
+                    return selected
+                else:
+                    self.log_error(f"Please enter a number between 1 and {len(variants)}")
+            except ValueError:
+                self.log_error("Please enter a valid number")
+                
+    def validate_installation_path(self, path: str) -> bool:
+        """Validate installation path"""
+        if not os.path.exists(path):
+            self.log_error(f"Installation path does not exist: {path}")
+            return False
+            
+        if not os.path.isdir(path):
+            self.log_error(f"Installation path is not a directory: {path}")
+            return False
+            
+        if not os.access(path, os.W_OK):
+            self.log_error(f"Installation path is not writable: {path}")
+            return False
+            
+        return True
+        
+    def build_pacstrap_command(self, args) -> List[str]:
+        """Build the pacstrap command with all necessary packages"""
+        # Determine kernel
+        if args.interactive:
+            kernel = self.display_kernel_menu()
+        else:
+            kernel = args.kernel
+            
+        # Validate kernel
+        if kernel not in self.kernel_allowlist and kernel not in self.kernel_variants:
+            self.log_error(f"Kernel '{kernel}' not supported")
+            self.log_info(f"Available kernels: {', '.join(self.kernel_variants.keys())}")
+            sys.exit(1)
+            
+        # Map kernel name
+        if kernel in self.kernel_list:
+            kernel_package = self.kernel_list[kernel]
+        else:
+            kernel_package = kernel
+            
+        # Filter packages
+        cmdline = [x for x in args.packages if x not in self.denylist and x not in self.asklist]
+        
+        # Handle ask list packages
+        ask = [x for x in args.packages if x in self.asklist]
+        for pkg in ask:
+            response = input(f'{Colors.YELLOW}Package "{pkg}" may not work properly on T2 Macs. Install anyway? [y/N]: {Colors.NC}')
+            if response.lower() == 'y':
+                cmdline.append(pkg)
+                
+        # Build final command
+        final_cmd = ["pacstrap", args.path] + cmdline + [
+            "apple-t2-audio-config",
+            "apple-bcm-firmware", 
+            "t2fanrd",
+            kernel_package,
+            f"{kernel_package}-headers"
+        ]
+        
+        return final_cmd
+        
+    def setup_pacman_config(self, install_path: str, dry_run: bool = False):
+        """Setup pacman configuration with T2Linux repositories"""
+        self.log_info("Adding T2Linux repositories to pacman.conf")
+        
+        if dry_run:
+            self.log_info("Dry run: Would add T2Linux repositories")
+            return
+            
+        pacman_conf_path = os.path.join(install_path, "etc/pacman.conf")
+        
+        try:
+            with open(pacman_conf_path, "a") as f:
+                f.write("""
+# T2Linux Repository
+[arch-mact2]
+Server = https://mirror.funami.tech/arch-mact2/os/x86_64
+SigLevel = Never
+""")
+            self.log_success("T2Linux repositories added successfully")
+        except Exception as e:
+            self.log_error(f"Failed to update pacman.conf: {e}")
+            
+    def run(self):
+        """Main execution function"""
+        parser = argparse.ArgumentParser(
+            description="CLEA T2strap: Enhanced pacstrap frontend for T2 Macs with multi-kernel support",
+            epilog=f"Available kernels: {', '.join(self.kernel_variants.keys())}",
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        
+        parser.add_argument("-k", "--kernel", 
+                          help="Kernel variant to use", 
+                          default="linux-t2",
+                          choices=list(self.kernel_variants.keys()))
+        parser.add_argument("-i", "--interactive", 
+                          help="Interactive kernel selection menu", 
+                          action="store_true")
+        parser.add_argument("-v", "--verbose", 
+                          help="Verbose output", 
+                          action="store_true")
+        parser.add_argument("-d", "--dry-run", 
+                          help="Dry run (don't actually install)", 
+                          action="store_true")
+        parser.add_argument("--list-kernels", 
+                          help="List available kernel variants and exit", 
+                          action="store_true")
+        parser.add_argument("path", 
+                          metavar="PATH", 
+                          help="Installation path",
+                          nargs='?' if '--list-kernels' in sys.argv else None)
+        parser.add_argument("packages", 
+                          metavar="PACKAGE", 
+                          help="Packages to install", 
+                          nargs="*")
+        
+        args = parser.parse_args()
+        
+        # Handle list kernels option
+        if args.list_kernels:
+            self.display_kernel_menu()
+            return
+            
+        # Validate required arguments
+        if not args.path:
+            parser.error("Installation path is required")
+            
+        # Fetch configuration
+        if not self.fetch_configuration():
+            self.log_warning("Using fallback configuration")
+            
+        # Validate installation path
+        if not self.validate_installation_path(args.path):
+            sys.exit(1)
+            
+        # Display verbose information
+        if args.verbose:
+            self.log_info(f"Kernel variants: {', '.join(self.kernel_variants.keys())}")
+            self.log_info(f"Denylist: {', '.join(self.denylist)}")
+            self.log_info(f"Asklist: {', '.join(self.asklist)}")
+            
+        # Build pacstrap command
+        cmd = self.build_pacstrap_command(args)
+        
+        if args.verbose:
+            self.log_info(f"Running command: {' '.join(cmd)}")
+            
+        # Execute pacstrap
+        if args.dry_run:
+            self.log_info("Dry run: Would execute pacstrap command")
+            print(" ".join(cmd))
+        else:
+            self.log_info("Starting installation...")
+            try:
+                result = subprocess.run(cmd, check=True)
+                self.log_success("Pacstrap completed successfully")
+            except subprocess.CalledProcessError as e:
+                self.log_error(f"Pacstrap failed with exit code {e.returncode}")
+                sys.exit(1)
+            except KeyboardInterrupt:
+                self.log_warning("Installation interrupted by user")
+                sys.exit(1)
+                
+        # Setup pacman configuration
+        self.setup_pacman_config(args.path, args.dry_run)
+        
+        if not args.dry_run:
+            self.log_success("T2 Arch Linux installation completed!")
+            print(f"\n{Colors.BOLD}Next steps:{Colors.NC}")
+            print("1. Configure your system (timezone, locale, etc.)")
+            print("2. Install bootloader (GRUB recommended for T2 Macs)")
+            print("3. Reboot and enjoy your T2 Mac with Arch Linux!")
+
+if __name__ == "__main__":
+    t2strap = T2Strap()
+    t2strap.run()
