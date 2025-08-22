@@ -146,20 +146,21 @@ setup_build_environment() {
     log_success "Build environment setup complete"
 }
 
-# Check for enhanced build script
-check_enhanced_build() {
-    if [[ -f "build-enhanced.sh" ]]; then
-        log_success "Enhanced build system detected"
+# Check for unified build script
+check_unified_build() {
+    if [[ -f "build.sh" ]]; then
+        log_success "Unified build system detected"
         echo
-        log_info "You can now use the enhanced build system:"
-        echo "  ${BOLD}./build-enhanced.sh${NC}                 # Build all variants"
-        echo "  ${BOLD}./build-enhanced.sh xanmod${NC}          # Build specific variant"  
-        echo "  ${BOLD}./build-enhanced.sh --clean --verbose${NC} # Clean build with logs"
+        log_info "You can now use the unified build system:"
+        echo "  ${BOLD}./build.sh${NC}                         # Build everything (kernels + all ISOs)"
+        echo "  ${BOLD}./build.sh xanmod${NC}                  # Build kernels + XanMod ISO"  
+        echo "  ${BOLD}./build.sh --clean --verbose${NC}       # Clean build with verbose logs"
+        echo "  ${BOLD}./build.sh --skip-kernels lts${NC}      # Skip kernel build, use existing packages"
+        echo "  ${BOLD}./build.sh --clean-all${NC}             # Clean everything"
         echo
     else
-        log_warning "Enhanced build script not found"
-        log_info "Using traditional build method:"
-        echo "  ${BOLD}./build.sh${NC}                         # Build default ISO"
+        log_error "Unified build script not found"
+        log_info "Expected build.sh in current directory"
     fi
 }
 
@@ -262,7 +263,7 @@ main() {
         echo
         log_success "T2 Arch ISO preparation completed successfully!"
         echo
-        check_enhanced_build
+        check_unified_build
         
         echo
         log_info "Next steps:"

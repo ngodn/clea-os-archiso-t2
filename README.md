@@ -23,51 +23,9 @@ Professional Arch Linux live ISO builder for Macs with T2 security chip, featuri
 
 ## 🛠️ Quick Start
 
-### Method 1: Enhanced Build System (Recommended)
+### Step 1: Preparation (Required First)
 
-```bash
-# 1. Enhanced preparation (installs everything needed)
-./prepare.sh --verbose
-
-# 2. Build all variants
-./build-enhanced.sh
-
-# Or build specific variant
-./build-enhanced.sh xanmod
-
-# Or clean build with verbose output
-./build-enhanced.sh --clean --verbose
-
-# Or build LTS variant only
-./build-enhanced.sh -c lts
-```
-
-### Method 2: Traditional Build
-
-```bash
-# Enhanced preparation with system checks
-./prepare.sh --verbose
-
-# Build default ISO
-./build.sh
-
-# Cleanup
-./cleanup.sh
-```
-
-## 🛠️ Enhanced Preparation System
-
-The `prepare.sh` script provides comprehensive environment setup:
-
-### Preparation Features
-
-- **System Validation**: Checks Arch Linux compatibility and system resources
-- **Smart Package Installation**: Installs only missing dependencies
-- **Build Environment Setup**: Creates necessary directories and permissions
-- **Configuration Validation**: Verifies T2-specific settings and packages
-- **Integration Detection**: Identifies available build systems
-
-### Preparation Usage
+Before building, prepare your system with all dependencies:
 
 ```bash
 # Basic preparation
@@ -80,7 +38,14 @@ The `prepare.sh` script provides comprehensive environment setup:
 ./prepare.sh --help
 ```
 
-### What prepare.sh Installs
+#### What prepare.sh Does
+
+- **System Validation**: Checks Arch Linux compatibility and system resources
+- **Smart Package Installation**: Installs only missing dependencies
+- **Build Environment Setup**: Creates necessary directories and permissions
+- **Configuration Validation**: Verifies T2-specific settings and packages
+
+#### Required Dependencies
 
 | Package | Purpose | Required For |
 |---------|---------|--------------|
@@ -91,19 +56,51 @@ The `prepare.sh` script provides comprehensive environment setup:
 | `rsync` | File sync | Build optimization |
 | `squashfs-tools` | Filesystem tools | ISO compression |
 
-## 🏗️ Enhanced Build System
+### Step 2: Build ISOs
 
-The `build-enhanced.sh` script provides comprehensive ISO building capabilities:
+After preparation is complete, use the unified build system:
+
+```bash
+# Build everything (kernels + all ISO variants)
+./build.sh
+
+# Build specific variant (kernels + specific ISO)
+./build.sh xanmod
+
+# Clean build with verbose output
+./build.sh --clean --verbose
+
+# Skip kernel building (use existing packages)
+./build.sh --skip-kernels lts
+
+# Clean everything and exit
+./build.sh --clean-all
+```
+
+#### What the Unified Build System Does
+
+1. **Clones/Updates** linux-t2-clea repository automatically
+2. **Builds all T2 kernel variants** (linux-t2, linux-t2-lts, linux-t2-xanmod, etc.)
+3. **Creates local pacman repository** with built kernel packages
+4. **Builds ISO variants** using the locally built kernels
+
+No more missing package errors! 🎉
+
+## 🏗️ Unified Build System
+
+The single `build.sh` script handles everything automatically:
 
 ### Command Line Options
 
 ```bash
-./build-enhanced.sh [OPTIONS] [VARIANT]
+./build.sh [OPTIONS] [VARIANT]
 
 Options:
-  -c, --clean     Clean previous builds
-  -v, --verbose   Verbose output with detailed logging
-  -h, --help      Show help message
+  -c, --clean           Clean all previous builds and repositories
+  -v, --verbose         Verbose output with detailed logging
+  -s, --skip-kernels    Skip kernel building (use existing packages)
+  --clean-all           Clean everything and exit
+  -h, --help            Show help message
 
 Variants:
   default         Mainline T2 kernel (linux-t2)
@@ -113,6 +110,14 @@ Variants:
   liquorix        Liquorix T2 kernel (linux-t2-liquorix)
   all             Build all variants (default)
 ```
+
+### Key Features
+
+- **🔄 Auto Repository Management**: Clones/updates linux-t2-clea automatically
+- **🏗️ Integrated Kernel Building**: Builds all required T2 kernels from source
+- **📦 Local Repository**: Creates pacman repository with built packages
+- **🎯 No Missing Packages**: Solves the original package availability issue
+- **🧹 Smart Cleaning**: Proper repository cleaning and artifact management
 
 ### Build Output
 
@@ -130,35 +135,41 @@ Variants:
 
 ## 📋 Installation Guide
 
-### Prerequisites
+### Step 1: Clone Repository
 
 ```bash
 # Clone the repository
 git clone https://github.com/ngodn/clea-os-archiso-t2
 cd clea-os-archiso-t2
+```
 
-# Enhanced preparation (installs dependencies automatically)
+### Step 2: System Preparation (REQUIRED FIRST)
+
+```bash
+# Prepare system with all dependencies
 ./prepare.sh --verbose
 ```
 
-The enhanced `prepare.sh` script will:
+The `prepare.sh` script will:
 - ✅ Check system requirements (disk space, memory, CPU)
 - ✅ Install all required packages automatically
 - ✅ Verify archiso installation
 - ✅ Set up build environment
 - ✅ Validate T2 configuration
 
-### Building ISOs
+### Step 3: Build ISOs
+
+**Only after preparation is complete:**
 
 ```bash
-# Build all variants (recommended for distribution)
-./build-enhanced.sh --clean --verbose
+# Build all variants (kernels + ISOs)
+./build.sh --clean --verbose
 
-# Build specific variant for testing
-./build-enhanced.sh xanmod
+# Build specific variant for testing  
+./build.sh xanmod
 
 # Quick build without cleanup
-./build-enhanced.sh default
+./build.sh default
 ```
 
 ### Using Built ISOs
@@ -228,13 +239,13 @@ Create custom profiles by modifying:
 
 ```bash
 # Check build logs
-cat build-logs/build-iso-*.log
+cat build-logs/*.log
 
 # Clean and retry
-./build-enhanced.sh --clean --verbose [variant]
+./build.sh --clean --verbose [variant]
 
 # Check system requirements
-./build-enhanced.sh --help
+./build.sh --help
 ```
 
 ### Common Issues
@@ -268,10 +279,10 @@ cat build-logs/build-iso-*.log
 
 ```bash
 # Enable verbose logging
-VERBOSE=true ./build-enhanced.sh
+VERBOSE=true ./build.sh
 
 # Manual cleanup if needed
-sudo rm -rf archiso-*/work archiso-*/out
+./build.sh --clean-all
 ```
 
 ## 📊 Performance Comparison
@@ -292,7 +303,7 @@ sudo rm -rf archiso-*/work archiso-*/out
 crontab -e
 
 # Add weekly ISO builds
-0 2 * * 0 cd /path/to/clea-os-archiso-t2 && ./build-enhanced.sh --clean
+0 2 * * 0 cd /path/to/clea-os-archiso-t2 && ./build.sh --clean
 ```
 
 ### CI/CD Integration
@@ -327,7 +338,7 @@ The enhanced build system is designed for CI/CD integration:
 
 1. **Fork repository**
 2. **Create feature branch**: `git checkout -b feature/awesome-improvement`
-3. **Test changes**: `./build-enhanced.sh --clean xanmod`
+3. **Test changes**: `./build.sh --clean xanmod`
 4. **Submit pull request**
 
 ### Testing Checklist
