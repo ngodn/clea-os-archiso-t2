@@ -380,10 +380,9 @@ update_archiso_pacman_config() {
     
     log_info "Found ${#repo_packages[@]} packages in local repository"
     
-    # Copy local repository into archiso airootfs for chroot access
-    local archiso_local_repo="$ARCHISO_DIR/airootfs/opt/clea-t2-local"
-    log_info "Copying local repository into archiso airootfs for chroot access..."
-    mkdir -p "$(dirname "$archiso_local_repo")"
+    # Copy local repository to archiso directory (same level as pacman.conf)
+    local archiso_local_repo="$ARCHISO_DIR/clea-t2-local"
+    log_info "Copying local repository to archiso directory for build access..."
     rm -rf "$archiso_local_repo"
     cp -r "$LOCAL_REPO_DIR" "$archiso_local_repo"
     
@@ -414,10 +413,26 @@ update_archiso_pacman_config() {
     fi
     cd - >/dev/null
     
-    # Configure repository entry - use path accessible from within chroot
+    # Configure repository entry - use absolute path that mkarchiso can access
+    # mkarchiso should be able to access host filesystem paths during build
     local local_repo_entry="[clea-t2-local]
-Server = file:///opt/clea-t2-local
+Server = file://$LOCAL_REPO_DIR
 SigLevel = Optional TrustAll"
+    
+    log_info "Using local repository path: $LOCAL_REPO_DIR"
+    
+    # Verify the original local repository is still accessible
+    if [[ ! -f "$LOCAL_REPO_DIR/clea-t2-local.db.tar.gz" ]]; then
+        log_error "Original local repository database not found at $LOCAL_REPO_DIR/clea-t2-local.db.tar.gz"
+        return 1
+    fi
+    
+    # Also copy the corrected database files back to the original location
+    log_info "Ensuring corrected database files exist in original location..."
+    if [[ ! -f "$LOCAL_REPO_DIR/clea-t2-local.db" ]]; then
+        cp "$LOCAL_REPO_DIR/clea-t2-local.db.tar.gz" "$LOCAL_REPO_DIR/clea-t2-local.db"
+        log_info "Created $LOCAL_REPO_DIR/clea-t2-local.db"
+    fi
     
     # Backup original pacman.conf if it doesn't exist
     if [[ ! -f "$pacman_conf.orig" ]]; then
@@ -559,6 +574,9 @@ build_single_iso() {
     head -n 15 "$ARCHISO_DIR/pacman.conf" | grep -A5 "\[clea-t2-local\]" || log_warning "Local repository not found in config"
     
     log_info "Running mkarchiso for $variant..."
+    
+    # Create bind mount directory in work directory for local repository access
+    log_info "Setting up local repository bind mount for mkarchiso chroot..."
     
     if [[ "$VERBOSE" == "true" ]]; then
         if ! sudo mkarchiso -v -w "$work_dir" -o "$variant_output_dir" "$ARCHISO_DIR" 2>&1 | tee "$iso_build_log"; then
