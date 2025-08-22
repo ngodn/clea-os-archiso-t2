@@ -427,11 +427,9 @@ SigLevel = Optional TrustAll"
         
         log_info "Added conflict resolution configuration for XanMod kernel"
         
-        # Temporarily disable arch-mact2 repository to prevent conflicts
-        log_info "Temporarily disabling arch-mact2 repository to prevent kernel conflicts"
-        sed -i 's/^\[arch-mact2\]/#[arch-mact2]/' "$pacman_conf"
-        sed -i 's/^Server = https:\/\/mirror\.funami\.tech\/arch-mact2/#Server = https:\/\/mirror.funami.tech\/arch-mact2/' "$pacman_conf"
-        sed -i 's/^SigLevel = Never/#SigLevel = Never/' "$pacman_conf"
+        # Instead of disabling arch-mact2, add more specific ignore packages
+        log_info "Adding specific kernel packages to ignore list to prevent conflicts"
+        sed -i 's/^IgnorePkg = linux-t2/IgnorePkg = linux-t2 linux-t2-lts linux-t2-xanmod linux-t2-xanmod-lts linux-t2-liquorix/' "$pacman_conf"
     fi
     
     log_success "Added local T2 repository to pacman.conf (highest priority)"
