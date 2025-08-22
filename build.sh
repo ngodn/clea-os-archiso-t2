@@ -407,14 +407,31 @@ SigLevel = Optional TrustAll"
     } > "$temp_file"
     mv "$temp_file" "$pacman_conf"
     
-    # Add ignore packages to prevent conflicts
-    log_info "Adding package ignore list to prevent conflicts..."
-    if ! grep -q "IgnorePkg" "$pacman_conf"; then
-        # Add IgnorePkg line after [options] section
-        sed -i '/^\[options\]/a IgnorePkg = linux-t2' "$pacman_conf"
-    else
-        # Append to existing IgnorePkg line
-        sed -i 's/^IgnorePkg\s*=.*/& linux-t2/' "$pacman_conf"
+    # For non-default kernels, add special configuration to handle conflicts
+    if [[ "$LOCAL_REPO_DIR" == *"xanmod"* ]] || grep -q "linux-t2-xanmod" "$LOCAL_REPO_DIR"/*.pkg.tar.zst 2>/dev/null; then
+        log_info "Adding special configuration for XanMod kernel conflicts..."
+        
+        # Add ignore packages to prevent conflicts
+        if ! grep -q "IgnorePkg" "$pacman_conf"; then
+            # Add IgnorePkg line after [options] section
+            sed -i '/^\[options\]/a IgnorePkg = linux-t2' "$pacman_conf"
+        else
+            # Append to existing IgnorePkg line
+            sed -i 's/^IgnorePkg\s*=.*/& linux-t2/' "$pacman_conf"
+        fi
+        
+        # Also add assume-installed for dependency resolution
+        if ! grep -q "AssumeInstalled" "$pacman_conf"; then
+            sed -i '/^IgnorePkg/a AssumeInstalled = linux-t2' "$pacman_conf"
+        fi
+        
+        log_info "Added conflict resolution configuration for XanMod kernel"
+        
+        # Temporarily disable arch-mact2 repository to prevent conflicts
+        log_info "Temporarily disabling arch-mact2 repository to prevent kernel conflicts"
+        sed -i 's/^\[arch-mact2\]/#[arch-mact2]/' "$pacman_conf"
+        sed -i 's/^Server = https:\/\/mirror\.funami\.tech\/arch-mact2/#Server = https:\/\/mirror.funami.tech\/arch-mact2/' "$pacman_conf"
+        sed -i 's/^SigLevel = Never/#SigLevel = Never/' "$pacman_conf"
     fi
     
     log_success "Added local T2 repository to pacman.conf (highest priority)"
@@ -573,6 +590,12 @@ update_package_list_for_variant() {
         # Also explicitly remove any remaining linux-t2 references
         sed -i '/^linux-t2$/d' "$packages_file" 2>/dev/null || true
         sed -i '/^linux-t2-lts$/d' "$packages_file" 2>/dev/null || true
+        
+        # For xanmod, also check if we need to remove other conflicting variants
+        if [[ "$kernel_package" == *"xanmod"* ]]; then
+            sed -i '/^linux-t2-liquorix$/d' "$packages_file" 2>/dev/null || true
+            log_info "Removed conflicting kernel variants for XanMod build"
+        fi
     fi
     
     # Show after replacement
