@@ -300,7 +300,24 @@ setup_local_repository() {
         log_info "Make sure kernel build completed successfully"
         log_info "Current working directory: $(pwd)"
         log_info "Script directory: $SCRIPT_DIR"
-        return 1
+        
+        # Additional debug: search more aggressively
+        log_info "Searching for packages more broadly..."
+        local all_packages=()
+        while IFS= read -r -d '' package; do
+            all_packages+=("$package")
+        done < <(find "$SCRIPT_DIR" -name "*.pkg.tar.zst" -print0 2>/dev/null)
+        
+        if [[ ${#all_packages[@]} -gt 0 ]]; then
+            log_info "Found packages in script directory tree:"
+            for pkg in "${all_packages[@]}"; do
+                log_info "  - $pkg"
+            done
+            built_packages=("${all_packages[@]}")
+        else
+            log_error "No T2 packages found anywhere. Kernel build may have failed."
+            return 1
+        fi
     fi
     
     log_info "Found ${#built_packages[@]} built T2 packages"
@@ -315,8 +332,22 @@ setup_local_repository() {
     # Create repository database
     cd "$LOCAL_REPO_DIR"
     
+    # Verify packages exist in local repo
+    local repo_packages=(*.pkg.tar.zst)
+    if [[ ${#repo_packages[@]} -eq 0 || "${repo_packages[0]}" == "*.pkg.tar.zst" ]]; then
+        log_error "No packages found in local repository directory: $LOCAL_REPO_DIR"
+        return 1
+    fi
+    
+    log_info "Creating repository database with ${#repo_packages[@]} packages:"
+    for pkg in "${repo_packages[@]}"; do
+        log_info "  - $(basename "$pkg")"
+    done
+    
     if ! repo-add clea-t2.db.tar.gz *.pkg.tar.zst; then
         log_error "Failed to create repository database"
+        log_info "Repository directory contents:"
+        ls -la "$LOCAL_REPO_DIR"
         return 1
     fi
     
@@ -334,6 +365,9 @@ update_archiso_pacman_config() {
     local local_repo_entry="[clea-t2-local]
 Server = file://$LOCAL_REPO_DIR
 SigLevel = Optional TrustAll"
+    
+    log_info "Configuring local repository in pacman.conf"
+    log_info "Repository path: $LOCAL_REPO_DIR"
     
     # Check if local repository entry already exists
     if grep -q "\[clea-t2-local\]" "$pacman_conf"; then
