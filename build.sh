@@ -287,9 +287,19 @@ setup_local_repository() {
         done < <(find "$SCRIPT_DIR/linux-t2-clea" -maxdepth 1 -name "*.pkg.tar.zst" -print0 2>/dev/null)
     fi
     
+    # Also check current working directory (in case script is run from different location)
+    if [[ ${#built_packages[@]} -eq 0 ]]; then
+        while IFS= read -r -d '' package; do
+            built_packages+=("$package")
+        done < <(find "$(pwd)" -maxdepth 1 -name "*.pkg.tar.zst" -print0 2>/dev/null)
+    fi
+    
     if [[ ${#built_packages[@]} -eq 0 ]]; then
         log_warning "No built T2 packages found in $KERNEL_BUILD_DIR"
+        log_warning "Also checked $SCRIPT_DIR and $SCRIPT_DIR/linux-t2-clea"
         log_info "Make sure kernel build completed successfully"
+        log_info "Current working directory: $(pwd)"
+        log_info "Script directory: $SCRIPT_DIR"
         return 1
     fi
     
@@ -540,10 +550,12 @@ main() {
     
     local start_time=$(date +%s)
     
-    # Step 1: Setup kernel repository
-    if ! setup_kernel_repository; then
-        log_error "Failed to setup kernel repository"
-        exit 1
+    # Step 1: Setup kernel repository (only if not skipping kernel build)
+    if [[ "$SKIP_KERNEL_BUILD" != "true" ]]; then
+        if ! setup_kernel_repository; then
+            log_error "Failed to setup kernel repository"
+            exit 1
+        fi
     fi
     
     # Step 2: Build T2 kernels for the specified variant
