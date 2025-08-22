@@ -362,29 +362,49 @@ setup_local_repository() {
 # Update archiso pacman.conf to include local repository
 update_archiso_pacman_config() {
     local pacman_conf="$ARCHISO_DIR/pacman.conf"
-    local local_repo_entry="[clea-t2-local]
-Server = file://$LOCAL_REPO_DIR
-SigLevel = Optional TrustAll"
+    local archiso_repo_dir="$ARCHISO_DIR/local-repo"
     
     log_info "Configuring local repository in pacman.conf"
-    log_info "Repository path: $LOCAL_REPO_DIR"
+    log_info "Source repository path: $LOCAL_REPO_DIR"
+    log_info "Archiso repository path: $archiso_repo_dir"
+    
+    # Copy local repository into archiso directory
+    if [[ -d "$LOCAL_REPO_DIR" ]]; then
+        log_info "Copying local repository to archiso directory..."
+        rm -rf "$archiso_repo_dir"
+        cp -r "$LOCAL_REPO_DIR" "$archiso_repo_dir"
+        log_success "Local repository copied to archiso directory"
+    else
+        log_error "Local repository not found at $LOCAL_REPO_DIR"
+        return 1
+    fi
+    
+    # Configure repository entry to use absolute path that mkarchiso can access
+    local local_repo_entry="[clea-t2-local]
+Server = file://$archiso_repo_dir
+SigLevel = Optional TrustAll"
     
     # Check if local repository entry already exists
     if grep -q "\[clea-t2-local\]" "$pacman_conf"; then
-        log_info "Local repository already configured in pacman.conf"
-        return 0
+        log_info "Removing existing local repository configuration..."
+        # Remove existing entry
+        sed -i '/\[clea-t2-local\]/,/^$/d' "$pacman_conf"
     fi
     
     # Add local repository entry before arch-mact2
     if grep -q "\[arch-mact2\]" "$pacman_conf"; then
         # Insert before arch-mact2
         sed -i "/\[arch-mact2\]/i\\$local_repo_entry\\n" "$pacman_conf"
-        log_success "Added local T2 repository to pacman.conf"
+        log_success "Added local T2 repository to pacman.conf (before arch-mact2)"
     else
         # Add at the end
         echo -e "\n$local_repo_entry" >> "$pacman_conf"
-        log_success "Added local T2 repository to pacman.conf"
+        log_success "Added local T2 repository to pacman.conf (at end)"
     fi
+    
+    # Verify the repository configuration
+    log_info "Repository configuration in pacman.conf:"
+    grep -A2 "\[clea-t2-local\]" "$pacman_conf" || log_warning "Could not verify repository configuration"
 }
 
 # Build ISO variants
