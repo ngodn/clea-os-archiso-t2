@@ -389,11 +389,24 @@ update_archiso_pacman_config() {
     # Fix database file naming for pacman compatibility
     cd "$archiso_local_repo"
     if [[ -f "clea-t2-local.db.tar.gz" ]]; then
-        log_info "Creating database symlinks for pacman compatibility..."
-        ln -sf "clea-t2-local.db.tar.gz" "clea-t2-local.db"
-        ln -sf "clea-t2-local.files.tar.gz" "clea-t2-local.files" 2>/dev/null || true
+        log_info "Copying database files with correct names for pacman compatibility..."
+        
+        # Copy database files with the names pacman expects
+        cp "clea-t2-local.db.tar.gz" "clea-t2-local.db"
+        [[ -f "clea-t2-local.files.tar.gz" ]] && cp "clea-t2-local.files.tar.gz" "clea-t2-local.files"
+        
         log_info "Database files prepared:"
-        ls -la clea-t2-local.db* || true
+        ls -la clea-t2-local.* || true
+        
+        # Verify the database file is readable
+        if [[ -r "clea-t2-local.db" ]]; then
+            log_info "Database file clea-t2-local.db is readable"
+            # Show database contents for debugging
+            tar -tzf "clea-t2-local.db" 2>/dev/null | head -5 || log_warning "Could not read database contents"
+        else
+            log_error "Database file clea-t2-local.db is not readable"
+            return 1
+        fi
     else
         log_error "Database file clea-t2-local.db.tar.gz not found in local repository"
         return 1
