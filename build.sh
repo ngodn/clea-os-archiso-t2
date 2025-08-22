@@ -156,55 +156,103 @@ get_kernel_config() {
     esac
 }
 
-# Build T2 kernels
+# Legacy build_kernels function - kept for compatibility
 build_kernels() {
+    log_warning "build_kernels() is deprecated, use build_kernel_variants() instead"
+    return 0
+}
+
+# Build specific kernel variants based on build_variant
+build_kernel_variants() {
+    local build_variant="$1"
+    
     if [[ "$SKIP_KERNEL_BUILD" == "true" ]]; then
         log_info "Skipping kernel build (SKIP_KERNEL_BUILD=true)"
         return 0
     fi
     
-    log_info "Building T2 kernel variants..."
+    log_info "Building T2 kernel variants for: $build_variant"
     
     cd "$KERNEL_BUILD_DIR"
     
-    # Check if build-all.sh exists
-    if [[ ! -f "build-all.sh" ]]; then
-        log_error "build-all.sh not found in $KERNEL_BUILD_DIR"
+    # Determine which variants to build
+    local variants_to_build=()
+    if [[ "$build_variant" == "all" ]]; then
+        variants_to_build=("${BUILD_VARIANTS[@]}")
+        log_info "Building all kernel variants: ${BUILD_VARIANTS[*]}"
+    else
+        variants_to_build=("$build_variant")
+        log_info "Building single kernel variant: $build_variant"
+    fi
+    
+    # Build each variant
+    for variant in "${variants_to_build[@]}"; do
+        if ! build_single_kernel_variant "$variant"; then
+            log_error "Failed to build kernel variant: $variant"
+            return 1
+        fi
+    done
+    
+    log_success "Kernel build completed successfully"
+    return 0
+}
+
+# Build a single kernel variant using makepkg
+build_single_kernel_variant() {
+    local variant="$1"
+    local kernel_build_log="$LOG_DIR/kernel-build-$variant.log"
+    
+    log_info "Building $variant kernel variant..."
+    
+    # Get the correct PKGBUILD file
+    local pkgbuild_file
+    case "$variant" in
+        "default")
+            pkgbuild_file="PKGBUILD"
+            ;;
+        *)
+            pkgbuild_file="PKGBUILD-$variant"
+            ;;
+    esac
+    
+    # Check if PKGBUILD exists
+    if [[ ! -f "$pkgbuild_file" ]]; then
+        log_error "PKGBUILD file not found: $pkgbuild_file"
         return 1
     fi
     
-    # Make sure it's executable
-    chmod +x build-all.sh
-    
     # Set up build options
-    local build_opts=()
+    local makepkg_opts=("-s" "--noconfirm")
     if [[ "$CLEAN_BUILD" == "true" ]]; then
-        build_opts+=("--clean")
-    fi
-    if [[ "$VERBOSE" == "true" ]]; then
-        build_opts+=("--verbose")
+        makepkg_opts+=("-c")
     fi
     
-    # Build all kernel variants
-    log_info "Running kernel build system..."
-    local kernel_build_log="$LOG_DIR/kernel-build.log"
-    
+    # Build the kernel variant
     if [[ "$VERBOSE" == "true" ]]; then
-        if ! ./build-all.sh "${build_opts[@]}" 2>&1 | tee "$kernel_build_log"; then
-            log_error "Kernel build failed. Check log: $kernel_build_log"
+        log_info "Building $variant kernel (verbose mode)"
+        if ! makepkg -p "$pkgbuild_file" "${makepkg_opts[@]}" 2>&1 | tee "$kernel_build_log"; then
+            log_error "Kernel build failed for $variant. Check log: $kernel_build_log"
             return 1
         fi
     else
-        if ! ./build-all.sh "${build_opts[@]}" >"$kernel_build_log" 2>&1; then
-            log_error "Kernel build failed. Check log: $kernel_build_log"
+        log_info "Building $variant kernel (quiet mode, logging to $kernel_build_log)"
+        if ! makepkg -p "$pkgbuild_file" "${makepkg_opts[@]}" >"$kernel_build_log" 2>&1; then
+            log_error "Kernel build failed for $variant. Check log: $kernel_build_log"
             return 1
         fi
     fi
     
-    log_success "All kernel variants built successfully"
+    log_success "Successfully built $variant kernel variant"
     
-    # Copy built packages to local repository
-    setup_local_repository
+    # List generated packages
+    local packages=(*.pkg.tar.*)
+    if [[ ${#packages[@]} -gt 0 && "${packages[0]}" != "*.pkg.tar.*" ]]; then
+        log_info "Generated packages for $variant:"
+        for pkg in "${packages[@]}"; do
+            local pkg_size=$(du -h "$pkg" | cut -f1)
+            log_info "  - $pkg ($pkg_size)"
+        done
+    fi
     
     return 0
 }
@@ -484,9 +532,15 @@ main() {
         exit 1
     fi
     
-    # Step 2: Build T2 kernels
-    if ! build_kernels; then
+    # Step 2: Build T2 kernels for the specified variant
+    if ! build_kernel_variants "$build_variant"; then
         log_error "Kernel building failed"
+        exit 1
+    fi
+    
+    # Step 2.1: Setup local repository with built packages
+    if ! setup_local_repository; then
+        log_error "Local repository setup failed"
         exit 1
     fi
     
